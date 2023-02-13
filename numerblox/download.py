@@ -185,7 +185,12 @@ class NumeraiClassicDownloader(BaseDownloader):
     def __init__(self, directory_path: str, *args, **kwargs):
         super().__init__(directory_path=directory_path)
         self.napi = NumerAPI(*args, **kwargs)
-        self.current_round = self.napi.get_current_round()
+        try:
+            self.current_round = self.napi.get_current_round()
+        except ValueError:
+            print("Current round not open yet.")
+            self.current_round = None
+            
         # NumerAPI filenames corresponding to version, class and data type
         self.version_mapping = {"3": {
             "train": {
