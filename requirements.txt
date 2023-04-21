@@ -6,12 +6,12 @@ jupyter
 numpy
 scipy
 pandas
+pandas-ta
 tqdm
 rich
 kaggle
 joblib
 pyarrow
-typeguard
 numerapi
 numerbay
 lightgbm

@@ -5,6 +5,7 @@ __all__ = ['BaseIO', 'BaseDownloader', 'NumeraiClassicDownloader', 'KaggleDownlo
 
 # %% ../nbs/01_download.ipynb 4
 import os
+import time
 import glob
 import json
 import shutil
@@ -12,13 +13,10 @@ import concurrent
 import pandas as pd
 from tqdm.auto import tqdm
 from rich.tree import Tree
-from functools import partial
 from numerapi import NumerAPI
-import matplotlib.pyplot as plt
 from google.cloud import storage
 from rich.console import Console
 from eod import EodHistoricalData
-from typeguard import typechecked
 from datetime import datetime as dt
 from pathlib import Path, PosixPath
 from abc import ABC, abstractmethod
@@ -29,7 +27,6 @@ from dateutil.relativedelta import relativedelta
 from .numerframe import NumerFrame
 
 # %% ../nbs/01_download.ipynb 7
-@typechecked
 class BaseIO(ABC):
     """
     Basic functionality for IO (downloading and uploading).
@@ -134,7 +131,6 @@ class BaseIO(ABC):
         return not bool(self.get_all_files)
 
 # %% ../nbs/01_download.ipynb 9
-@typechecked
 class BaseDownloader(BaseIO):
     """
     Abstract base class for downloaders.
@@ -481,6 +477,10 @@ class EODDownloader(BaseDownloader):
         self.frequency = frequency
         self.current_time = dt.now()
         self.end_date = self.current_time.strftime("%Y-%m-%d")
+        self.cpu_count = os.cpu_count()
+        # Time to sleep in between API calls to avoid hitting EOD rate limits.
+        # EOD rate limit is set at 1000 calls per minute.
+        self.sleep_time = self.cpu_count / 32
 
     def download_inference_data(self):
         """ Download one year of data for defined tickers. """
@@ -515,7 +515,7 @@ class EODDownloader(BaseDownloader):
         start: Starting data in %Y-%m-%d format.
         """
         price_datafs = []
-        with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+        with ThreadPoolExecutor(max_workers=self.cpu_count) as executor:
             tasks = [executor.submit(self.generate_stock_dataf, ticker, start) for ticker in self.tickers]
             for task in tqdm(concurrent.futures.as_completed(tasks),
                              total=len(self.tickers),
@@ -530,13 +530,14 @@ class EODDownloader(BaseDownloader):
         For example, Apple stock = AAPL.US.
         start: Starting data in %Y-%m-%d format.
         """
+        time.sleep(self.sleep_time)
         try:
             resp = self.client.get_prices_eod(ticker, period=self.frequency,
                                               from_=start, to=self.end_date)
             stock_df = pd.DataFrame(resp).set_index('date')
             stock_df['ticker'] = ticker
-        except:
-            rich_print(f":warning: WARNING: No data found for ticker: [red]'{ticker}'[/red]. :warning:")
+        except Exception as e:
+            rich_print(f":warning: WARNING: Date pull failed on ticker: [red]'{ticker}'[/red]. :warning: Exception: {e}")
             stock_df = pd.DataFrame()
         return stock_df
 
